@@ -76,6 +76,18 @@ or:
 python -m smc_ml4co.train --num-graphs 100 --m-samples 8 --epochs 30
 ```
 
+To save sampled subgraphs offline for fair baseline comparison:
+
+```bash
+python -m smc_ml4co.train --num-graphs 100 --m-samples 8 --scenario-dir scenario_cache
+```
+
+To force supervised training to reuse the exact same saved subgraphs:
+
+```bash
+python -m smc_ml4co.train --load-saved-scenarios --scenario-dir scenario_cache
+```
+
 ## Use your own `graph_dataset`
 
 ```python

@@ -361,7 +361,13 @@ def collate_policy_scenarios(samples: Sequence[GraphScenarioSample]) -> dict:
 
 
 def collate_flattened_policy_scenarios(samples: Sequence[GraphScenarioSample]) -> dict:
-    """Collate sampled subgraphs directly for subgraph-level policy learning."""
+    """Collate sampled subgraphs directly for subgraph-level policy learning.
+
+    This is used by the unsupervised pipeline when we want to run the policy
+    network on every sampled subgraph (instead of only the original graph).
+    All subgraphs in the mini-batch are flattened into one disconnected graph
+    tensor, with offset metadata to recover each subgraph slice later.
+    """
     x_parts: list[torch.Tensor] = []
     edge_parts: list[torch.Tensor] = []
     subgraph_batch_parts: list[torch.Tensor] = []
@@ -378,13 +384,19 @@ def collate_flattened_policy_scenarios(samples: Sequence[GraphScenarioSample]) -
             edge_index = graph_edge_index(subgraph)
 
             if edge_index.numel() > 0:
+                # Shift local node ids so each subgraph occupies its own node range
+                # inside the flattened batch tensor.
                 edge_parts.append(edge_index + node_offset)
 
             n = x.size(0)
             x_parts.append(x)
+            # Map every node to its flattened subgraph id (0..num_subgraphs-1).
             subgraph_batch_parts.append(torch.full((n,), subgraph_id, dtype=torch.long))
+            # Record which original graph this subgraph belongs to.
             graph_group_parts.append(torch.tensor([group_id], dtype=torch.long))
             subgraphs.append(subgraph)
+            # Save slice metadata so logits can be cut back per subgraph later:
+            # logits[offset : offset + count].
             node_offsets.append(node_offset)
             node_counts.append(n)
 
