@@ -336,18 +336,21 @@ def train_unsupervised_on_graph_dataset(
         scenario_dir=args.scenario_dir or None,
         load_saved=args.load_saved_scenarios,
         save_generated=args.save_scenarios_during_train,
+        saved_sample_cache_size=args.saved_sample_cache_size,
     )
     return train_unsupervised_on_dataset(dataset, args)
 
 
 def train(args: argparse.Namespace) -> UnsupervisedTrainResult:
-    graphs = build_synthetic_graph_dataset(
-        num_graphs=args.num_graphs,
-        min_nodes=args.min_nodes,
-        max_nodes=args.max_nodes,
-        edge_prob=args.edge_prob,
-        seed=args.seed,
-    )
+    graphs = []
+    if not args.load_saved_scenarios:
+        graphs = build_synthetic_graph_dataset(
+            num_graphs=args.num_graphs,
+            min_nodes=args.min_nodes,
+            max_nodes=args.max_nodes,
+            edge_prob=args.edge_prob,
+            seed=args.seed,
+        )
     return train_unsupervised_on_graph_dataset(graphs, args)
 
 
@@ -367,6 +370,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scenario-dir", type=str, default="scenario_cache")
     parser.add_argument("--load-saved-scenarios", action="store_true")
     parser.add_argument("--save-scenarios-during-train", action="store_true")
+    parser.add_argument("--saved-sample-cache-size", type=int, default=128)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-layers", type=int, default=3)
     parser.add_argument("--dropout", type=float, default=0.1)

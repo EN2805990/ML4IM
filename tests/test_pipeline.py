@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from smc_ml4co.data import (
+    LazyScenarioSamples,
     StochasticMaxCoverDataset,
     build_synthetic_graph_dataset,
     collate_flattened_policy_scenarios,
@@ -106,3 +107,29 @@ def test_preprocess_module_builds_and_saves_offline_dataset(tmp_path):
     assert len(samples) == 2
     assert len(loaded) == 2
     assert len(loaded[0].subgraphs) == 3
+
+
+def test_dataset_load_saved_uses_lazy_samples(tmp_path):
+    graphs = build_synthetic_graph_dataset(num_graphs=3, min_nodes=8, max_nodes=12, seed=7)
+    preprocess_graph_dataset(
+        graph_dataset=graphs,
+        scenario_dir=tmp_path,
+        m_samples=3,
+        k=2,
+        seed=7,
+        compute_labels=False,
+    )
+
+    dataset = StochasticMaxCoverDataset(
+        graph_dataset=[],
+        m_samples=3,
+        k=2,
+        scenario_dir=tmp_path,
+        load_saved=True,
+    )
+
+    assert isinstance(dataset.samples, LazyScenarioSamples)
+    assert len(dataset) == 3
+    sample = dataset[1]
+    assert sample.graph_id == 1
+    assert len(sample.subgraphs) == 3

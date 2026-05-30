@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 import json
 import pickle
 from dataclasses import dataclass
@@ -128,13 +129,13 @@ class StochasticMaxCoverDataset(Dataset):
         scenario_dir: str | Path | None = None,
         load_saved: bool = False,
         save_generated: bool = False,
+        saved_sample_cache_size: int = 128,
     ) -> None:
         if m_samples <= 0:
             raise ValueError("m_samples must be positive")
+        if saved_sample_cache_size < 0:
+            raise ValueError("saved_sample_cache_size must be non-negative")
 
-        self.graph_dataset = [
-            relabel_graph_to_int(graph) for graph in graph_dataset
-        ]
         self.m_samples = m_samples
         self.k = k
         self.cover_radius = cover_radius
@@ -156,8 +157,15 @@ class StochasticMaxCoverDataset(Dataset):
         if load_saved:
             if self.scenario_dir is None:
                 raise ValueError("scenario_dir is required when load_saved=True")
-            self.samples = load_scenario_samples(self.scenario_dir)
+            self.graph_dataset = []
+            self.samples: Sequence[GraphScenarioSample] = LazyScenarioSamples(
+                self.scenario_dir,
+                cache_size=saved_sample_cache_size,
+            )
         else:
+            self.graph_dataset = [
+                relabel_graph_to_int(graph) for graph in graph_dataset
+            ]
             self.samples = build_scenario_samples(
                 graph_dataset=self.graph_dataset,
                 m_samples=self.m_samples,
@@ -265,8 +273,7 @@ def build_scenario_samples(
     return samples
 
 
-def load_scenario_samples(scenario_dir: str | Path) -> list[GraphScenarioSample]:
-    """Load saved scenario samples produced by ``save_scenario_samples``."""
+def _read_scenario_manifest(scenario_dir: str | Path) -> tuple[Path, list[str]]:
     input_dir = Path(scenario_dir)
     manifest_path = input_dir / "manifest.json"
     if not manifest_path.exists():
@@ -275,20 +282,80 @@ def load_scenario_samples(scenario_dir: str | Path) -> list[GraphScenarioSample]
     with manifest_path.open("r", encoding="utf-8") as f:
         manifest = json.load(f)
 
-    samples: list[GraphScenarioSample] = []
-    for filename in manifest["files"]:
-        with (input_dir / filename).open("rb") as f:
-            payload = pickle.load(f)
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        raise ValueError(f"invalid manifest format in {manifest_path}: 'files' must be a list")
 
-        samples.append(
-            GraphScenarioSample(
-                graph_id=int(payload["graph_id"]),
-                original_graph=payload["original_graph"],
-                subgraphs=payload["subgraphs"],
-                subgraph_values=[float(v) for v in payload.get("subgraph_values", [])],
-                target=float(payload.get("target", 0.0)),
-            )
-        )
+    return input_dir, [str(name) for name in files]
+
+
+def _load_scenario_sample_file(input_dir: Path, filename: str) -> GraphScenarioSample:
+    with (input_dir / filename).open("rb") as f:
+        payload = pickle.load(f)
+
+    return GraphScenarioSample(
+        graph_id=int(payload["graph_id"]),
+        original_graph=payload["original_graph"],
+        subgraphs=payload["subgraphs"],
+        subgraph_values=[float(v) for v in payload.get("subgraph_values", [])],
+        target=float(payload.get("target", 0.0)),
+    )
+
+
+class LazyScenarioSamples(Sequence[GraphScenarioSample]):
+    """Lazy sequence view over saved scenario files with optional LRU cache."""
+
+    def __init__(
+        self,
+        scenario_dir: str | Path,
+        cache_size: int = 128,
+    ) -> None:
+        if cache_size < 0:
+            raise ValueError("cache_size must be non-negative")
+        self.input_dir, self.files = _read_scenario_manifest(scenario_dir)
+        self.cache_size = cache_size
+        self._cache: OrderedDict[int, GraphScenarioSample] = OrderedDict()
+
+    def __len__(self) -> int:
+        return len(self.files)
+
+    def _normalize_index(self, index: int) -> int:
+        size = len(self.files)
+        if index < 0:
+            index += size
+        if index < 0 or index >= size:
+            raise IndexError("scenario sample index out of range")
+        return index
+
+    def _get_single(self, index: int) -> GraphScenarioSample:
+        normalized = self._normalize_index(index)
+        cached = self._cache.get(normalized)
+        if cached is not None:
+            self._cache.move_to_end(normalized)
+            return cached
+
+        sample = _load_scenario_sample_file(self.input_dir, self.files[normalized])
+        if self.cache_size > 0:
+            self._cache[normalized] = sample
+            self._cache.move_to_end(normalized)
+            while len(self._cache) > self.cache_size:
+                self._cache.popitem(last=False)
+        return sample
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            start, stop, step = index.indices(len(self.files))
+            return [self._get_single(i) for i in range(start, stop, step)]
+        return self._get_single(int(index))
+
+
+def load_scenario_samples(scenario_dir: str | Path) -> list[GraphScenarioSample]:
+    """Load saved scenario samples produced by ``save_scenario_samples``."""
+    input_dir, files = _read_scenario_manifest(scenario_dir)
+
+    samples: list[GraphScenarioSample] = []
+    for filename in files:
+        samples.append(_load_scenario_sample_file(input_dir, filename))
 
     return samples
 

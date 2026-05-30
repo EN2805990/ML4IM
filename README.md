@@ -85,6 +85,13 @@ To reuse already-saved sampled subgraphs:
 python -m smc_ml4co.unsupervised --load-saved-scenarios --scenario-dir scenario_cache
 ```
 
+When `--load-saved-scenarios` is enabled, scenario files are lazy-loaded on
+demand instead of fully loaded into memory. You can tune in-memory cache size:
+
+```bash
+python -m smc_ml4co.unsupervised --load-saved-scenarios --scenario-dir scenario_cache --saved-sample-cache-size 64
+```
+
 ## Run supervised baseline
 
 ```bash
@@ -107,6 +114,12 @@ To force supervised training to reuse the exact same saved subgraphs:
 
 ```bash
 python -m smc_ml4co.train --load-saved-scenarios --scenario-dir scenario_cache
+```
+
+The supervised path also uses lazy loading for saved scenarios. Optional cache:
+
+```bash
+python -m smc_ml4co.train --load-saved-scenarios --scenario-dir scenario_cache --saved-sample-cache-size 64
 ```
 
 To save sampled subgraphs during supervised training (optional):
