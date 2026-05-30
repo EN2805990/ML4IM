@@ -205,6 +205,7 @@ def train_on_graph_dataset(
         seed=args.seed,
         scenario_dir=args.scenario_dir or None,
         load_saved=args.load_saved_scenarios,
+        save_generated=args.save_scenarios_during_train,
     )
     return train_on_dataset(dataset, args)
 
@@ -243,6 +244,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--scenario-dir", type=str, default="")
     parser.add_argument("--load-saved-scenarios", action="store_true")
+    parser.add_argument("--save-scenarios-during-train", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--checkpoint", type=str, default="")

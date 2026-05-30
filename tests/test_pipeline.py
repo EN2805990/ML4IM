@@ -10,6 +10,7 @@ from smc_ml4co.data import (
     load_scenario_samples,
 )
 from smc_ml4co.model import NodePolicyGNN, ScenarioGNNRegressor
+from smc_ml4co.preprocess import preprocess_graph_dataset
 
 
 def test_dataset_target_is_mean_of_subgraph_values():
@@ -47,6 +48,7 @@ def test_scenarios_are_saved_and_loaded(tmp_path):
         seed=3,
         compute_labels=False,
         scenario_dir=tmp_path,
+        save_generated=True,
     )
 
     loaded = load_scenario_samples(tmp_path)
@@ -87,3 +89,20 @@ def test_flattened_policy_collate_expands_all_subgraphs():
     assert len(batch["subgraphs"]) == 2 * 4
     assert batch["subgraph_node_offsets"].shape == torch.Size([2 * 4])
     assert batch["subgraph_node_counts"].shape == torch.Size([2 * 4])
+
+
+def test_preprocess_module_builds_and_saves_offline_dataset(tmp_path):
+    graphs = build_synthetic_graph_dataset(num_graphs=2, min_nodes=8, max_nodes=12, seed=6)
+    samples = preprocess_graph_dataset(
+        graph_dataset=graphs,
+        scenario_dir=tmp_path,
+        m_samples=3,
+        k=2,
+        seed=6,
+        compute_labels=False,
+    )
+
+    loaded = load_scenario_samples(tmp_path)
+    assert len(samples) == 2
+    assert len(loaded) == 2
+    assert len(loaded[0].subgraphs) == 3

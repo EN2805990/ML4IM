@@ -335,6 +335,7 @@ def train_unsupervised_on_graph_dataset(
         compute_labels=False,
         scenario_dir=args.scenario_dir or None,
         load_saved=args.load_saved_scenarios,
+        save_generated=args.save_scenarios_during_train,
     )
     return train_unsupervised_on_dataset(dataset, args)
 
@@ -365,6 +366,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--edge-keep-prob", type=float, default=0.9)
     parser.add_argument("--scenario-dir", type=str, default="scenario_cache")
     parser.add_argument("--load-saved-scenarios", action="store_true")
+    parser.add_argument("--save-scenarios-during-train", action="store_true")
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-layers", type=int, default=3)
     parser.add_argument("--dropout", type=float, default=0.1)

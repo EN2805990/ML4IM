@@ -127,6 +127,7 @@ class StochasticMaxCoverDataset(Dataset):
         compute_labels: bool = True,
         scenario_dir: str | Path | None = None,
         load_saved: bool = False,
+        save_generated: bool = False,
     ) -> None:
         if m_samples <= 0:
             raise ValueError("m_samples must be positive")
@@ -142,6 +143,7 @@ class StochasticMaxCoverDataset(Dataset):
         self.seed = seed
         self.compute_labels = compute_labels
         self.scenario_dir = Path(scenario_dir) if scenario_dir else None
+        self.save_generated = save_generated
         self.objective_fn = objective_fn or (
             lambda graph: greedy_max_cover_value(
                 graph,
@@ -156,41 +158,19 @@ class StochasticMaxCoverDataset(Dataset):
                 raise ValueError("scenario_dir is required when load_saved=True")
             self.samples = load_scenario_samples(self.scenario_dir)
         else:
-            self.samples = self._build_samples()
-            if self.scenario_dir is not None:
-                save_scenario_samples(self.samples, self.scenario_dir)
-
-    def _build_samples(self) -> list[GraphScenarioSample]:
-        samples: list[GraphScenarioSample] = []
-
-        for graph_id, graph in enumerate(self.graph_dataset):
-            rng = np.random.default_rng(self.seed + graph_id)
-            subgraphs: list[nx.Graph] = []
-            values: list[float] = []
-
-            for _ in range(self.m_samples):
-                subgraph = sample_subgraph(
-                    graph,
-                    rng=rng,
-                    node_keep_prob=self.node_keep_prob,
-                    edge_keep_prob=self.edge_keep_prob,
-                )
-                value = float(self.objective_fn(subgraph)) if self.compute_labels else 0.0
-                subgraphs.append(subgraph)
-                values.append(value)
-
-            target = float(np.mean(values)) if self.compute_labels else 0.0
-            samples.append(
-                GraphScenarioSample(
-                    graph_id=graph_id,
-                    original_graph=graph,
-                    subgraphs=subgraphs,
-                    subgraph_values=values,
-                    target=target,
-                )
+            self.samples = build_scenario_samples(
+                graph_dataset=self.graph_dataset,
+                m_samples=self.m_samples,
+                k=self.k,
+                cover_radius=self.cover_radius,
+                node_keep_prob=self.node_keep_prob,
+                edge_keep_prob=self.edge_keep_prob,
+                seed=self.seed,
+                objective_fn=self.objective_fn,
+                compute_labels=self.compute_labels,
             )
-
-        return samples
+            if self.save_generated and self.scenario_dir is not None:
+                save_scenario_samples(self.samples, self.scenario_dir)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -227,6 +207,62 @@ def save_scenario_samples(
 
     with (output_dir / "manifest.json").open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
+
+
+def build_scenario_samples(
+    graph_dataset: Sequence[nx.Graph],
+    m_samples: int,
+    k: int,
+    cover_radius: int = 1,
+    node_keep_prob: float = 0.8,
+    edge_keep_prob: float = 1.0,
+    seed: int = 0,
+    objective_fn: ObjectiveFn | None = None,
+    compute_labels: bool = True,
+) -> list[GraphScenarioSample]:
+    """Sample stochastic subgraphs and build scenario samples in memory."""
+    if m_samples <= 0:
+        raise ValueError("m_samples must be positive")
+
+    graphs = [relabel_graph_to_int(graph) for graph in graph_dataset]
+    scenario_objective = objective_fn or (
+        lambda graph: greedy_max_cover_value(
+            graph,
+            k=k,
+            cover_radius=cover_radius,
+            normalize=True,
+        )
+    )
+
+    samples: list[GraphScenarioSample] = []
+    for graph_id, graph in enumerate(graphs):
+        rng = np.random.default_rng(seed + graph_id)
+        subgraphs: list[nx.Graph] = []
+        values: list[float] = []
+
+        for _ in range(m_samples):
+            subgraph = sample_subgraph(
+                graph,
+                rng=rng,
+                node_keep_prob=node_keep_prob,
+                edge_keep_prob=edge_keep_prob,
+            )
+            value = float(scenario_objective(subgraph)) if compute_labels else 0.0
+            subgraphs.append(subgraph)
+            values.append(value)
+
+        target = float(np.mean(values)) if compute_labels else 0.0
+        samples.append(
+            GraphScenarioSample(
+                graph_id=graph_id,
+                original_graph=graph,
+                subgraphs=subgraphs,
+                subgraph_values=values,
+                target=target,
+            )
+        )
+
+    return samples
 
 
 def load_scenario_samples(scenario_dir: str | Path) -> list[GraphScenarioSample]:
